@@ -38,13 +38,28 @@ const stats = [
     "value": 0
   }
 ]
+const archiveColumns = [
+  "实例编号",
+  "作业名称",
+  "运行节点",
+  "最后终态",
+  "重启次数",
+  "运行结果",
+  "处理结论",
+  "来源模块",
+  "版本号",
+  "更新时间"
+]
 
 type Row = Record<string, string | number | null>
 
 export default function JobopsView() {
   const [rows, setRows] = useState<Row[]>([])
   const [total, setTotal] = useState(0)
+  const [archiveRows, setArchiveRows] = useState<Row[]>([])
+  const [archiveTotal, setArchiveTotal] = useState(0)
   const [errorMessage, setErrorMessage] = useState('')
+  const [noticeMessage, setNoticeMessage] = useState('')
   const [filters, setFilters] = useState<Record<string, string>>({})
   const filterFields = useMemo(() => columns.slice(0, 3), [])
 
@@ -62,6 +77,17 @@ export default function JobopsView() {
     } catch (error) {
       setErrorMessage(error instanceof Error ? error.message : '流作业运维列表读取失败')
     }
+    try {
+      const archiveResponse = await request(`${ENDPOINT}/archive`)
+      if (!archiveResponse.ok) {
+        throw new Error('作业实例状态数据存档读取失败')
+      }
+      const archivePayload = await archiveResponse.json()
+      setArchiveRows(archivePayload.items ?? [])
+      setArchiveTotal(archivePayload.total ?? 0)
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : '作业实例状态数据存档读取失败')
+    }
   }, [filters])
 
   useEffect(() => {
@@ -70,14 +96,21 @@ export default function JobopsView() {
 
   async function runAction(action: string, row: Row) {
     setErrorMessage('')
+    setNoticeMessage('')
     try {
       const response = await request(`${ENDPOINT}/${row.id}/actions`, {
         method: 'POST',
-        body: JSON.stringify({ action }),
+        body: JSON.stringify({ values: { action } }),
       })
       if (!response.ok) {
         throw new Error('流作业运维动作未生效，请稍后重试')
       }
+      const payload = await response.json()
+      if (!payload.ok) {
+        setErrorMessage(payload.message || '流作业运维动作未生效')
+        return
+      }
+      setNoticeMessage(payload.message || `作业实例已${action}`)
       await reload()
     } catch (error) {
       setErrorMessage(error instanceof Error ? error.message : '流作业运维操作失败')
@@ -155,8 +188,42 @@ export default function JobopsView() {
 
       <footer className="page-foot">
         <span>共 {total} 条流作业运维记录</span>
+        {noticeMessage && <span className="notice-text">{noticeMessage}</span>}
         {errorMessage && <span className="error-text">{errorMessage}</span>}
       </footer>
+
+      <section className="archive-section">
+        <header className="page-head">
+          <div>
+            <h3>作业实例状态数据存档</h3>
+            <p className="page-desc">每条作业实例保留一份可追溯的存档：最后终态、重启次数与运行结果，重复提交按一次处理。</p>
+          </div>
+        </header>
+        <table className="data-table">
+          <thead>
+            <tr>
+              {archiveColumns.map((column) => <th key={column}>{column}</th>)}
+            </tr>
+          </thead>
+          <tbody>
+            {archiveRows.map((row) => (
+              <tr key={String(row.id)}>
+                {archiveColumns.map((column) => (
+                  <td key={column}>{row[column === '版本号' ? 'version' : column] ?? '—'}</td>
+                ))}
+              </tr>
+            ))}
+            {archiveRows.length === 0 && (
+              <tr>
+                <td className="empty-state" colSpan={archiveColumns.length}>暂无存档记录，状态推进后自动写入</td>
+              </tr>
+            )}
+          </tbody>
+        </table>
+        <footer className="page-foot">
+          <span>共 {archiveTotal} 条存档记录</span>
+        </footer>
+      </section>
     </section>
   )
 }

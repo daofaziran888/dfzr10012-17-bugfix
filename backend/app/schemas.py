@@ -26,6 +26,8 @@ class EntryPayload(BaseModel):
 
     values: dict[str, Any] = Field(default_factory=dict)
     remark: str | None = None
+    # 动作接口兼容两种提交方式：values.action 或顶层 action
+    action: str | None = None
 
 
 

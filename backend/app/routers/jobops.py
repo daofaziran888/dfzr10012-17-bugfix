@@ -30,6 +30,27 @@ def list_entries(
     return PageResult(items=items, total=total, page=page, size=size)
 
 
+@router.get("/archive", response_model=PageResult[dict])
+def list_archive(
+    keyword: str | None = Query(default=None, description="按实例编号或作业名称检索"),
+    status: str | None = Query(default=None, description="按最后终态过滤"),
+    page: int = 1,
+    size: int = 20,
+) -> PageResult[dict]:
+    """作业实例状态数据存档清单：展示每条实例的最后终态、重启次数、运行结果与处理结论。"""
+    if size > 200:
+        raise HTTPException(status_code=400, detail="每页最多 200 条，请缩小分页范围")
+    items, total = service.list_archive(keyword=keyword, status=status, page=page, size=size)
+    return PageResult(items=items, total=total, page=page, size=size)
+
+
+@router.get("/export")
+def export_entries() -> dict[str, Any]:
+    """导出流作业运维清单：返回当前过滤条件下的全量数据。"""
+    items, total = service.list_entries(page=1, size=10000)
+    return {"module": "jobops", "total": total, "items": items}
+
+
 @router.get("/{entry_id}", response_model=dict)
 def get_entry(entry_id: int) -> dict:
     """读取单条作业实例明细；不存在时给出可读的错误说明。"""
@@ -51,15 +72,8 @@ def create_entry(payload: EntryPayload) -> ActionResult:
 @router.post("/{entry_id}/actions", response_model=ActionResult)
 def run_action(entry_id: int, payload: EntryPayload) -> ActionResult:
     """对单条作业实例执行启动作业、暂停作业、停止作业；不允许的动作会被拦下并说明原因。"""
-    action = str(payload.values.get("action") or "").strip()
+    action = str(payload.values.get("action") or payload.action or "").strip()
     entry, message = service.run_action(entry_id, action)
     if entry is None:
         return ActionResult(ok=False, message=message)
     return ActionResult(ok=True, message=message, entry=entry)
-
-
-@router.get("/export")
-def export_entries() -> dict[str, Any]:
-    """导出流作业运维清单：返回当前过滤条件下的全量数据。"""
-    items, total = service.list_entries(page=1, size=10000)
-    return {"module": "jobops", "total": total, "items": items}
